@@ -1,0 +1,27 @@
+# Backend image for the digitization viewer (FastAPI + uvicorn).
+#
+# Development setup: this image installs Python dependencies ONLY. The actual
+# source code (dashboard_backend + the LLMBatcher sibling package) is bind-
+# mounted at runtime via docker-compose, so code edits hot-reload without a
+# rebuild. Rebuild only when requirements.txt changes.
+FROM python:3.11-slim
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    # `from LLMBatcher...` imports resolve because LLMBatcher lives at /app
+    # (the dashboard/ dir is mounted to /app). The working dir below puts
+    # dashboard_backend's top-level modules (routers, dashboard_db, ...) on
+    # the path as well.
+    PYTHONPATH=/app
+
+WORKDIR /app/dashboard_backend
+
+COPY requirements.txt /tmp/requirements.txt
+RUN pip install --no-cache-dir -r /tmp/requirements.txt
+
+EXPOSE 8000
+
+# --reload-dir /app so changes to both dashboard_backend and LLMBatcher are watched.
+CMD ["uvicorn", "dashboard_app_be:app", \
+     "--host", "0.0.0.0", "--port", "8000", \
+     "--reload", "--reload-dir", "/app"]

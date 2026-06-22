@@ -1,0 +1,21 @@
+# Frontend image for the digitization viewer (Next.js dev server).
+#
+# Development setup: this image installs node_modules from the lockfile. The
+# source is bind-mounted at runtime and node_modules is masked by an anonymous
+# volume (see docker-compose.yml), so the container always uses the modules it
+# installed itself rather than the host's. Rebuild only when package.json /
+# package-lock.json change.
+FROM node:22-alpine
+
+# Next.js recommends libc6-compat on Alpine for any native addon compatibility.
+RUN apk add --no-cache libc6-compat
+
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+RUN npm ci
+
+EXPOSE 3000
+
+# Bind to 0.0.0.0 so the dev server is reachable from outside the container.
+CMD ["npm", "run", "dev", "--", "-H", "0.0.0.0", "-p", "3000"]

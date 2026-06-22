@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cat)",
+      "Bash(python3 /tmp/dep_closure.py)",
+      "Bash(ip route *)",
+      "Bash(docker-compose -f docker-compose.yml build)"
+    ]
+  }
+}

@@ -1,0 +1,47 @@
+# Development stack for the digitization viewer.
+#
+#   docker compose up --build
+#
+# Frontend -> http://192.168.15.27:8082   (host port 8082 -> container 3000)
+# Backend  -> http://192.168.15.27:8000
+#
+# The backend talks to the EXISTING external Postgres defined by VIEWER_DB_URL
+# in ../dashboard/.env. No database container is started here.
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    image: digitization-viewer-backend
+    container_name: digitization-viewer-backend
+    working_dir: /app/dashboard_backend
+    # VIEWER_DB_URL (and any other backend env) comes from the project's .env.
+    env_file:
+      - ../dashboard/.env
+    ports:
+      - "8000:8000"
+    volumes:
+      # Mount the whole dashboard/ dir so both dashboard_backend and the
+      # LLMBatcher package are present and hot-reload on edit.
+      - ../dashboard:/app
+
+  frontend:
+    build:
+      # Build context is the frontend dir so npm ci can read package*.json.
+      context: ../dashboard/frontend-digitization-viewer
+      dockerfile: ../../docker/Dockerfile.frontend
+    image: digitization-viewer-frontend
+    container_name: digitization-viewer-frontend
+    environment:
+      # The browser (loaded from :8082) calls the backend directly. This value
+      # overrides .env.local because real env vars take precedence in Next.js.
+      - NEXT_PUBLIC_API_URL=http://192.168.15.27:8000/documents
+    ports:
+      - "8082:3000"
+    volumes:
+      - ../dashboard/frontend-digitization-viewer:/app
+      # Anonymous volume keeps the image's node_modules from being shadowed by
+      # the bind-mounted source above.
+      - /app/node_modules
+    depends_on:
+      - backend
