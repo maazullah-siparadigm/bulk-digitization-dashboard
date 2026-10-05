@@ -3,6 +3,7 @@ from enum import Enum
 
 class NodeLabelsEnum(str, Enum):
     """Top-level node labels for document hierarchy."""
+    FILE = "FILE"
     DOCUMENT = "DOCUMENT"
     SECTION = "SECTION"
 
@@ -13,6 +14,9 @@ class SectionBlocksEnum(str, Enum):
     IMAGE = "IMAGE_BLOCK"
     TABLE = "TABLE_BLOCK"
     MARGINALIA = "MARGINALIA_BLOCK"
+    CARD = "CARD_BLOCK"
+    ATTESTATION = "ATTESTATION_BLOCK"
+    SCAN_CODE = "SCAN_CODE_BLOCK"
 
 class TextBlockFeaturesEnum(str, Enum):
     # LINES = "LINES"
@@ -94,12 +98,27 @@ class SectionTypes(str, Enum):
     table = "table"
     image = "image"
     marginalia = "marginalia"
+    # New Added
+    title = "title"
+    card = "card"
+    attestation = "attestation"
+    scan_code = "scan_code"
 
 
 class SectionGroupTypes(str, Enum):
     merged = "MERGED"
     individual = "INDIVIDUAL"
-    
+
+
+class TableTypes(str, Enum):
+    simple_table = "SIMPLE_TABLE"
+    complex_table = "COMPLEX_TABLE"
+
+
+class FalseTableTypes(str, Enum):
+    kvp = "kvp"
+    list_ = "list"
+    list_with_selection = "list_with_selection"
 
 class Stages(str, Enum):
     start = "START"
@@ -110,10 +129,31 @@ class Stages(str, Enum):
     bbox_agent = "BBOX_AGENT"
     
     bbox_correction = "BBOX_CORRECTION"
-    annotate_pdf = "ANNOTATE_PDF"
     
     annotate_image = "ANNOTATE_IMAGE"
-    
+
+    # The cross-page phase. Every page waits at annotate_image until the whole
+    # document has settled - annotated, terminated at end, or failed - because a
+    # page's partner cannot be known while any earlier page is still in flight.
+    # ngl_donut_ai gets that barrier for free: link_all_pages (core.py:1383) runs
+    # after the per-page gather has already returned.
+
+    # One per-document compute task, no LLM call. Resolves which pages pair with
+    # which (donut's _prev_nonempty_page, core.py:1386) and builds what each pair
+    # needs judged: the section trees and candidate ids printed into the prompt
+    # (_find_continuation_candidates, core.py:1240) and the stitched image
+    # (_stitch_pages_top_to_bottom, core.py:1113). All of it lands on Page.
+    build_page_pairs = "BUILD_PAGE_PAIRS"
+
+    # One agent task per pair that has candidates. Task.page_id is the LATER page;
+    # that page's Page.prev_page_id names the earlier half. Pages whose candidate_ids
+    # come back empty never get a task at all - donut skips the call outright
+    # (core.py:1396), and so do we.
+    link_page_continuity_agent = "LINK_PAGE_CONTINUITY_AGENT"
+
+    # build_cross_page_hierarchy is a single per-document compute task, no LLM call.
+    build_cross_page_hierarchy = "BUILD_CROSS_PAGE_HIERARCHY"
+
     section_span_agent = "SECTION_SPAN_AGENT"
     semantic_grouping_and_extraction_blocks = "semantic_grouping_and_extraction_blocks"
     
@@ -121,15 +161,28 @@ class Stages(str, Enum):
     
     router = "ROUTER"
 
+    text_classification_agent = "TEXT_CLASSIFICATION_AGENT"
+    text_router = "TEXT_ROUTER"
+
     text_extraction_agent = "TEXT_EXTRACTION_AGENT"
-    table_extraction_agent = "TABLE_EXTRACTION_AGENT"
-    table_renderer = "TABLE_RENDERER"
-    table_verification_agent = "TABLE_VERIFICATION_AGENT"
+    content_extraction_using_ocr = "CONTENT_EXTRACTION_USING_OCR"
     image_extraction_agent = "IMAGE_EXTRACTION_AGENT"
     marginalia_extraction_agent = "MARGINALIA_EXTRACTION_AGENT"
+    attestation_extraction_agent = "ATTESTATION_EXTRACTION_AGENT"
+    table_classification_agent = "TABLE_CLASSIFICATION_AGENT"
+    
+    table_router = "TABLE_ROUTER"
+    table_extraction_simple_agent = "TABLE_EXTRACTION_SIMPLE_AGENT"
+    table_extraction_agent = "TABLE_EXTRACTION_AGENT"
+    table_extraction_multipage_simple_agent = "TABLE_EXTRACTION_MULTIPAGE_SIMPLE_AGENT"
+    table_extraction_multipage_agent = "TABLE_EXTRACTION_MULTIPAGE_AGENT"
     
     end = "END"
-
+    
+    # STAGES BELOW ARE NOT BEING USED BUT ARE KEPT HERE BECAUSE THE ENUMS ARE USED IN SOME CASES
+    table_renderer = "TABLE_RENDERER"
+    table_verification_agent = "TABLE_VERIFICATION_AGENT"
+    annotate_pdf = "ANNOTATE_PDF"
 
 
 class UploadedFileStatus(str, Enum):
@@ -140,8 +193,58 @@ class UploadedFileStatus(str, Enum):
 
 
 class ThinkingLevels(str, Enum):
+    MINIMAL = "MINIMAL"
     LOW = "LOW"
     MEDIUM = "MEDIUM"
     HIGH = "HIGH"
 
 
+
+class ImageType(str, Enum):
+    CHART = "chart"
+    FIGURE = "figure"
+    LOGO = "logo"
+    INFOGRAPHIC = "infographic"
+    MAP = "map"
+    BARCODE = "barcode"
+    QR_CODE = "qr_code"
+    OTHER = "other"
+
+
+class ImageContentType(str, Enum):
+    CHART = "chart"
+    FIGURE = "figure"
+    LOGO = "logo"
+    INFOGRAPHIC = "infographic"
+    MAP = "map"
+    OTHER = "other"
+
+
+
+
+
+class ElementType(str, Enum):
+    # For Marginalia
+    TEXT = "text"
+    KEY_VALUES = "key_values"
+    CHECKBOX = "checkbox"
+    RADIO_BUTTON = "radio_button"
+    ORDERED = "ordered"
+    UNORDERED = "unordered"
+    IMAGE = "image"
+
+
+
+
+class MarginaliaType(str, Enum):
+    HEADER = "header"
+    FOOTER = "footer"
+    OTHER = "other"
+
+
+
+
+class CodeType(str, Enum):
+    BARCODE = "barcode"
+    QR_CODE = "qr_code"
+    OTHER = "other"

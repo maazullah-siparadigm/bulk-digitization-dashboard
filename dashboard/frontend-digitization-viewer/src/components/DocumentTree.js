@@ -93,9 +93,27 @@ export default function DocumentTree({ docTree, docStats, reenqueueConfirmationC
   let edges = [];
 
   if (docTree && Object.keys(docTree).length > 0) {
-    const result = convertTreeToFlow(docTree, null, [], [], 0, 0, reenqueueConfirmationCallback, selectedNodeId, reenqueueAllPagesCallback);
+    // Document-level subtrees (e.g. build_page_pairs) belong to no single page, so they
+    // are laid out after the page lanes instead of inside one of them.
+    const pageChildren = docTree.children.filter((c) => !c.document_level)
+    const documentLevelChildren = docTree.children.filter((c) => c.document_level)
+
+    const result = convertTreeToFlow({ ...docTree, children: pageChildren }, null, [], [], 0, 0, reenqueueConfirmationCallback, selectedNodeId, reenqueueAllPagesCallback);
     nodes = result.nodes;
     edges = result.edges;
+
+    const pageHeight = result.lastYOffset
+
+    // Each document-level subtree takes the column after everything placed so far, so
+    // build_page_pairs, its link agents, then build_cross_page_hierarchy read left to right.
+    documentLevelChildren.forEach((child) => {
+      const maxDepth = Math.max(...nodes.map((n) => n.position.x)) / 450
+      const { lastYOffset: height } = convertTreeToFlow(child, null, [], [], 0, 0, reenqueueConfirmationCallback, selectedNodeId, reenqueueAllPagesCallback)
+      convertTreeToFlow(child, null, nodes, edges, maxDepth + 1, Math.max(0, (pageHeight - height) / 2), reenqueueConfirmationCallback, selectedNodeId, reenqueueAllPagesCallback)
+      ;(child.source_ids || []).forEach((sourceId) => {
+        edges.push({ id: `${sourceId}-${child.id}`, source: sourceId, target: child.id })
+      })
+    })
   }
 
   return (

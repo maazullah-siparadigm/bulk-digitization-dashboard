@@ -2,7 +2,7 @@
 import { ChevronDown, ChevronUp, RefreshCw } from "lucide-react";
 import { useState, useEffect } from "react";
 import Metric from "@/components/Metric";
-import { getDocumentCounts, getTaskStatusCounts, getBatchCountsByModel, getRequestsCountPerBatch, getFailedTasksByDocument, getCompletedPagesOverTime } from "@/api/documents";
+import { getDocumentCounts, getTaskStatusCounts, getBatchCountsByModel, getRequestsCountPerBatch, getFailedTasksByDocument, getCompletedPagesOverTime, getStageModels } from "@/api/documents";
 import { getStatusColor } from "@/utils/statusColors";
 import { LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, ResponsiveContainer } from "recharts";
 
@@ -44,18 +44,6 @@ const BATCH_STATUS_COLORS = {
     "EXPIRED":   "#f59e0b",
 };
 
-// Map stage name → model name. Stages not listed here appear under "other".
-const STAGE_TO_MODEL = {
-    "BBOX_AGENT":               "gemini-3-flash-preview",
-    "SECTION_SPAN_AGENT" : "gemini-2.5-flash",
-    
-    "TEXT_EXTRACTION_AGENT" : "gemini-2.5-flash",
-    "MARGINALIA_EXTRACTION_AGENT" : "gemini-2.5-flash",
-    "TABLE_VERIFICATION_AGENT" : "gemini-2.5-flash",
-    "TABLE_EXTRACTION_AGENT":   "gemini-3.5-flash",
-    "IMAGE_EXTRACTION_AGENT" : "gemini-2.5-flash",
-};
-
 export default function Stats() {
     const [metricsDropdownOpen, setMetricsDropDownOpen] = useState(true);
     const [stagesDropdownOpen, setStagesDropdownOpen] = useState(true);
@@ -74,6 +62,9 @@ export default function Stats() {
         "pages-failed":         { title: "Digitization Failed", value: null },
     });
     const [taskStatusCounts, setTaskStatusCounts] = useState(null);
+    // Stage name → configured model, served by the backend from the stage configs.
+    // Stages missing from it (compute stages) are grouped under "other".
+    const [stageModels, setStageModels] = useState({});
     const [batchCountsByModel, setBatchCountsByModel] = useState(null);
     const [requestsCountPerBatch, setRequestsCountPerBatch] = useState(null);
     const [failedTasksByDocument, setFailedTasksByDocument] = useState(null);
@@ -115,6 +106,15 @@ export default function Stats() {
             }
         }
 
+        async function fetchStageModels() {
+            try {
+                const data = await getStageModels();
+                setStageModels(data?.error ? {} : data);
+            } catch (err) {
+                console.error("Failed to fetch stage models:", err);
+            }
+        }
+
         async function fetchBatchCountsByModel() {
             try {
                 const counts = await getBatchCountsByModel();
@@ -143,6 +143,7 @@ export default function Stats() {
         }
 
         fetchStats();
+        fetchStageModels();
         fetchTaskStatusCounts();
         fetchBatchCountsByModel();
         fetchRequestsCountPerBatch();
@@ -219,7 +220,7 @@ export default function Stats() {
         if (!taskStatusCounts) return null;
         const result = {};
         Object.entries(taskStatusCounts).forEach(([stage, counts]) => {
-            const model = STAGE_TO_MODEL[stage] ?? "other";
+            const model = stageModels[stage] ?? "other";
             if (!result[model]) result[model] = {};
             STATUS_COLUMNS.forEach(status => {
                 result[model][status] = (result[model][status] ?? 0) + (counts[status] ?? 0);

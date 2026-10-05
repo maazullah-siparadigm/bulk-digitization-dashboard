@@ -46,6 +46,10 @@ class AgentConfig(BaseModel):
     response_json_schema : Optional[dict] = None
     max_output_tokens: Optional[int] = None
 
+    # Fixed sampling seed for run-to-run reproducibility. ngl_donut_ai sets seed: 42 on
+    # most digitization agents; Gemini accepts it inside generationConfig.
+    seed: Optional[int] = None
+
 class ComputeConfig(BaseModel):
     task_type: Literal[TaskTypes.compute] = TaskTypes.compute
     queue: str

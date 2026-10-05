@@ -60,6 +60,10 @@ export const getTokenAggregatesByAgentModel = async () => {
   return await apiFetch(`/token_aggregates_by_agent_model`, { timeout: TOKEN_ANALYSIS_TIMEOUT });
 };
 
+export const getStageModels = async () => {
+  return await apiFetch(`/stage_models`);
+};
+
 export const getCompletedPagesOverTime = async (windowDays, granularity) => {
   return await apiFetch(`/completed_pages_over_time?window_days=${windowDays}&granularity=${granularity}`);
 };

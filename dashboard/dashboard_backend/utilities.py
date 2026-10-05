@@ -2,7 +2,9 @@ from LLMBatcher.executors.db.models import Task, Document, Page \
                                          , OCRResult, QualityCheck, Section \
                                          , SpanningSectionResponse, SemanticSectionGroup \
                                          , ExtractionSectionBlock, TextSection \
-                                         , MarginaliaSection, TableSection, ImageSection
+                                         , MarginaliaSection, TableSection, ImageSection \
+                                         , TableClassification, TextClassification \
+                                         , AttestationSection, PageLinkageResponse
 from LLMBatcher.common.myenums import Stages, TaskStatus
 from sqlalchemy.orm import Session
 
@@ -10,13 +12,13 @@ def populate_doc_tree(task_id, task_dict: dict):
     page_num = None
     
     if task_dict[task_id]["task"].page:
-        page_num = f" Page {task_dict[task_id]['task'].page.page_index}"
+        page_num = f"Page {task_dict[task_id]['task'].page.page_index}"
     task_name = " ".join(task_dict[task_id]["task"].stage_name.split("_"))
     node_dict = {
         "id" : task_id,
         "type" : task_dict[task_id]["task"].task_type,
         "name" : task_name,
-        "pade_index" : page_num,
+        "page_index" : page_num,
         "status" : task_dict[task_id]["task"].status,
         "children" : []
     }
@@ -69,7 +71,7 @@ def get_data_associated_with_task(task: Task, db: Session):
             
             data["section-names"] = {
                 "field" : "Section Names",
-                "value" : [f"{sec.label} | {sec.section_type} | {sec.section_id}" for sec in all_sections]
+                "value" : [f"{sec.section_type} | {sec.section_id}" for sec in all_sections]
             }
 
         elif task.stage_name == Stages.bbox_correction:
@@ -121,12 +123,106 @@ def get_data_associated_with_task(task: Task, db: Session):
                 "value" : extracted_sections_with_images
             }
 
-        elif task.stage_name == Stages.router:
+        elif task.stage_name in (Stages.router, Stages.text_router, Stages.table_router):
             num_children = db.query(Task).filter(Task.page_id == task.page_id, Task.invalidate_chain == False, Task.parent_task_id == task.id).count()
             data["num-children"] = {
                 "field" : "Num. Children Spawned",
                 "value" : num_children
             }
+
+        elif task.stage_name == Stages.build_page_pairs:
+            # Document-level task (page_id is None); the output lives on Page.
+            pages = db.query(Page).filter(Page.document_id == task.document_id).all()
+            data["pages-with-prev-page"] = {
+                "field" : "Pages Paired With An Earlier Page",
+                "value" : sum(1 for pg in pages if pg.prev_page_id)
+            }
+            data["pages-with-candidates"] = {
+                "field" : "Pairs Needing A Linkage Call",
+                "value" : sum(1 for pg in pages if pg.candidate_ids)
+            }
+
+        elif task.stage_name == Stages.link_page_continuity_agent:
+            linkage = db.query(PageLinkageResponse).filter(
+                                    PageLinkageResponse.page_id == task.page_id
+                                    ).one_or_none()
+            if linkage:
+                data["page-linkage"] = {
+                    "field" : "Page Linkage Response",
+                    "value" : linkage.response
+                }
+
+        elif task.stage_name == Stages.build_cross_page_hierarchy:
+            # Document-level task; the output is the links written onto Section.
+            sections = db.query(Section).filter(Section.document_id == task.document_id).all()
+            data["total-sections"] = {
+                "field" : "Total Sections",
+                "value" : len(sections)
+            }
+            data["sections-with-parent"] = {
+                "field" : "Sections Nested Under A Parent",
+                "value" : sum(1 for sec in sections if sec.parent_section_id)
+            }
+            data["sections-continuing"] = {
+                "field" : "Sections Continuing From A Previous Page",
+                "value" : sum(1 for sec in sections if sec.continues_from_section_id)
+            }
+
+        elif task.stage_name == Stages.text_classification_agent:
+            text_classification = db.query(TextClassification).filter(
+                                    TextClassification.extraction_block_id == task.extraction_block_id
+                                    ).one_or_none()
+            if text_classification:
+                data["has-structured-content"] = {
+                    "field" : "Has Structured Content",
+                    "value" : text_classification.has_structured_content
+                }
+
+        elif task.stage_name == Stages.table_classification_agent:
+            table_classification = db.query(TableClassification).filter(
+                                    TableClassification.extraction_block_id == task.extraction_block_id
+                                    ).one_or_none()
+            if table_classification:
+                data["table-classification"] = {
+                    "field" : "Table Classification",
+                    "value" : {
+                        "is_true_table" : table_classification.is_true_table,
+                        "is_heavily_redacted" : table_classification.is_heavily_redacted,
+                        "is_complex_table" : table_classification.is_complex_table,
+                        "false_table_type" : table_classification.false_table_type,
+                        "final_section_type" : table_classification.final_section_type,
+                    }
+                }
+
+        elif task.stage_name == Stages.attestation_extraction_agent:
+            attestation_section = db.query(AttestationSection).filter(
+                                    AttestationSection.extraction_block_id == task.extraction_block_id
+                                    ).one_or_none()
+            if attestation_section:
+                data["attestation-section"] = {
+                    "field" : "Attestation Section",
+                    "value" : attestation_section.response
+                }
+
+        elif task.stage_name == Stages.content_extraction_using_ocr:
+            # Writes a MarginaliaSection for marginalia blocks, a TextSection otherwise.
+            ocr_section = db.query(TextSection).filter(
+                                    TextSection.extraction_block_id == task.extraction_block_id
+                                    ).one_or_none()
+            if ocr_section:
+                data["ocr-text-section"] = {
+                    "field" : "Text Section (from OCR)",
+                    "value" : ocr_section.response
+                }
+            else:
+                ocr_marginalia = db.query(MarginaliaSection).filter(
+                                    MarginaliaSection.extraction_block_id == task.extraction_block_id
+                                    ).one_or_none()
+                if ocr_marginalia:
+                    data["ocr-marginalia-section"] = {
+                        "field" : "Marginalia Section (from OCR)",
+                        "value" : ocr_marginalia.response
+                    }
 
         elif task.stage_name == Stages.text_extraction_agent:
             text_section = db.query(TextSection
@@ -161,7 +257,12 @@ def get_data_associated_with_task(task: Task, db: Session):
                     "value" : marginalia_section.response
                 }
 
-        elif task.stage_name == Stages.table_extraction_agent:
+        elif task.stage_name in (
+            Stages.table_extraction_agent,
+            Stages.table_extraction_simple_agent,
+            Stages.table_extraction_multipage_agent,
+            Stages.table_extraction_multipage_simple_agent,
+        ):
             table_section = db.query(TableSection
                                         ).filter(
                                             TableSection.extraction_block_id == task.extraction_block_id
@@ -175,6 +276,11 @@ def get_data_associated_with_task(task: Task, db: Session):
                     "field" : "Skip Verification",
                     "value" : table_section.skip_verification
                 }
+                if table_section.lineage_extraction_block_ids:
+                    data["lineage-extraction-blocks"] = {
+                        "field" : "Merged From Extraction Blocks",
+                        "value" : table_section.lineage_extraction_block_ids
+                    }
 
         elif task.stage_name == Stages.table_verification_agent:
             table_section = db.query(TableSection

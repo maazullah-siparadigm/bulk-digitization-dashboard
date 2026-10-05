@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from typing import List
 
 from dashboard_db import get_db
-from operations import list_all_documents, create_document_tree, get_document_stats, change_task_status_in_db, get_stage_data_db, get_task_status_counts, get_batch_counts_by_model, get_requests_count_per_batch, get_document_counts, get_failed_tasks_by_document, get_token_aggregates, get_token_histograms, get_token_aggregates_by_agent_model, get_completed_pages_over_time
+from operations import list_all_documents, create_document_tree, get_document_stats, change_task_status_in_db, get_stage_data_db, get_task_status_counts, get_batch_counts_by_model, get_requests_count_per_batch, get_document_counts, get_failed_tasks_by_document, get_token_aggregates, get_token_histograms, get_token_aggregates_by_agent_model, get_completed_pages_over_time, get_stage_models
 from schemas import TaskStatusUpdate
 
 router = APIRouter(prefix="/documents", tags=["Documents"])
@@ -66,6 +66,14 @@ def change_task_status(data: TaskStatusUpdate, db: Session = Depends(get_db)):
 def task_status_counts(db: Session = Depends(get_db)):
     try:
         return get_task_status_counts(db)
+    except Exception as e:
+        return {"error": f"Error {e}"}
+
+
+@router.get("/stage_models")
+def stage_models():
+    try:
+        return get_stage_models()
     except Exception as e:
         return {"error": f"Error {e}"}
 

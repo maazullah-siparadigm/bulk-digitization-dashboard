@@ -69,8 +69,32 @@ def create_document_tree(db: Session, doc_id):
             tasks_dict[doc_task.id]["parents"].append(doc_task.parent_task_id)
     #     print(f"{idx + 1} / {len(all_document_tasks)}")
     # print("HERE")
+
+    # build_page_pairs and build_cross_page_hierarchy are document-level (they belong to
+    # no single page) but are parented under one arbitrary task of the previous stage -
+    # page_barrier_worker so the lineage walk can see them, the orchestrator's generic
+    # spawn for the hierarchy. Drawn as-is they land inside one page's lane. Display
+    # only: hoist them to the root and flag them so the viewer lays each out in its own
+    # column after the page lanes, fed by every task of the stage that precedes it.
+    # Listed in pipeline order - the viewer places them left to right in this order.
+    document_level_stages = (
+        (Stages.build_page_pairs, Stages.annotate_image),
+        (Stages.build_cross_page_hierarchy, Stages.link_page_continuity_agent),
+    )
+    sources_by_task = {}
+    for stage, source_stage in document_level_stages:
+        source_ids = [t.id for t in all_document_tasks if t.stage_name == source_stage]
+        for doc_task in all_document_tasks:
+            if doc_task.stage_name == stage and doc_task.parent_task_id in tasks_dict:
+                tasks_dict[doc_task.parent_task_id]["children"].remove(doc_task.id)
+                tasks_dict[start_task.id]["children"].append(doc_task.id)
+                sources_by_task[doc_task.id] = source_ids
+
     doc_tree = populate_doc_tree(start_task.id, tasks_dict)
-    # doc_tree = {}
+    for child in doc_tree["children"]:
+        if child["id"] in sources_by_task:
+            child["document_level"] = True
+            child["source_ids"] = sources_by_task[child["id"]]
 
     return doc_tree
 
@@ -447,3 +471,15 @@ def get_completed_pages_over_time(db: Session, window_days: int, granularity: st
         current += step
 
     return {"granularity": granularity, "data": data}
+
+
+
+def get_stage_models() -> dict:
+    # Stage name -> the model its agent is configured with. Compute stages have no
+    # model and are left out, so callers can treat a missing key as "other".
+    result = {}
+    for stage in Stages:
+        agent_config = get_agent_config(stage)
+        if agent_config:
+            result[stage.value] = agent_config.model_name
+    return result
