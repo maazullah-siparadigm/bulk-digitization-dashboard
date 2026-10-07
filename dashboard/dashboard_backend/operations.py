@@ -70,16 +70,18 @@ def create_document_tree(db: Session, doc_id):
     #     print(f"{idx + 1} / {len(all_document_tasks)}")
     # print("HERE")
 
-    # build_page_pairs and build_cross_page_hierarchy are document-level (they belong to
-    # no single page) but are parented under one arbitrary task of the previous stage -
-    # page_barrier_worker so the lineage walk can see them, the orchestrator's generic
-    # spawn for the hierarchy. Drawn as-is they land inside one page's lane. Display
-    # only: hoist them to the root and flag them so the viewer lays each out in its own
-    # column after the page lanes, fed by every task of the stage that precedes it.
+    # Barriers are one per page (page_barrier) and one per completed link
+    # (hierarchy_barrier), so they stay where they are, in their page's lane. The stage
+    # each group releases is document-level but hangs under whichever barrier was
+    # handled first, which would draw it inside that one lane.
+    # Display only: hoist build_page_pairs and build_cross_page_hierarchy to the root and
+    # flag them so the viewer lays each out in its own column after the page lanes, fed
+    # by every barrier of its group. build_page_pairs' subtree carries the linking tasks
+    # and their hierarchy_barriers.
     # Listed in pipeline order - the viewer places them left to right in this order.
     document_level_stages = (
-        (Stages.build_page_pairs, Stages.annotate_image),
-        (Stages.build_cross_page_hierarchy, Stages.link_page_continuity_agent),
+        (Stages.build_page_pairs, Stages.page_barrier),
+        (Stages.build_cross_page_hierarchy, Stages.hierarchy_barrier),
     )
     sources_by_task = {}
     for stage, source_stage in document_level_stages:
@@ -88,7 +90,11 @@ def create_document_tree(db: Session, doc_id):
             if doc_task.stage_name == stage and doc_task.parent_task_id in tasks_dict:
                 tasks_dict[doc_task.parent_task_id]["children"].remove(doc_task.id)
                 tasks_dict[start_task.id]["children"].append(doc_task.id)
-                sources_by_task[doc_task.id] = source_ids
+                # No tasks of the source stage (a document with no page pairs has no
+                # hierarchy_barriers; build_page_pairs creates the hierarchy task
+                # directly): draw the edge from the parent instead, so the column is not
+                # left floating.
+                sources_by_task[doc_task.id] = source_ids or [doc_task.parent_task_id]
 
     doc_tree = populate_doc_tree(start_task.id, tasks_dict)
     for child in doc_tree["children"]:

@@ -91,6 +91,8 @@ class TaskTypes(str, Enum):
     start = "START"
     end = "END"
     router = "ROUTER"
+    # No queue: released by a periodic barrier worker, then handled by the orchestrator.
+    barrier = "BARRIER"
 
 
 class SectionTypes(str, Enum):
@@ -131,10 +133,13 @@ class Stages(str, Enum):
     bbox_correction = "BBOX_CORRECTION"
     
     annotate_image = "ANNOTATE_IMAGE"
+    # One per page. Holds build_page_pairs back until every page has settled.
+    page_barrier = "PAGE_BARRIER"
 
-    # The cross-page phase. Every page waits at annotate_image until the whole
-    # document has settled - annotated, terminated at end, or failed - because a
-    # page's partner cannot be known while any earlier page is still in flight.
+    # The cross-page phase. Every page waits at its page_barrier until the whole
+    # document has settled - annotated or rejected by QC; a failed page never settles
+    # and stops the document - because a page's partner cannot be known while any
+    # earlier page is still in flight.
     # ngl_donut_ai gets that barrier for free: link_all_pages (core.py:1383) runs
     # after the per-page gather has already returned.
 
@@ -150,6 +155,9 @@ class Stages(str, Enum):
     # come back empty never get a task at all - donut skips the call outright
     # (core.py:1396), and so do we.
     link_page_continuity_agent = "LINK_PAGE_CONTINUITY_AGENT"
+    # One per completed link. Holds build_cross_page_hierarchy back until every linking
+    # task has completed or failed.
+    hierarchy_barrier = "HIERARCHY_BARRIER"
 
     # build_cross_page_hierarchy is a single per-document compute task, no LLM call.
     build_cross_page_hierarchy = "BUILD_CROSS_PAGE_HIERARCHY"
